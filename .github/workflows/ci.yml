@@ -1,0 +1,167 @@
+# CI for RunTheWall/constly-ide. This file lives at the REPOSITORY root
+# (.github/workflows/ci.yml); the VS Code extension lives in vscode/ and the
+# JetBrains plugin will live in jetbrains/. Each bridge gets its own
+# path-filtered job; the attribution gate runs for every change.
+#
+# CI builds and verifies; it never publishes. Publishing runs from the
+# founder's machine with the release-script posture (tokens in the password
+# manager, never in CI).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  changes:
+    # One cheap job decides which bridge jobs run, so a docs-only or
+    # jetbrains-only change does not spin up three VS Code downloads.
+    runs-on: ubuntu-24.04
+    outputs:
+      vscode: ${{ steps.filter.outputs.vscode }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Detect changed paths
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            git fetch --no-tags --quiet origin "$BASE" "$HEAD" || true
+            range="$BASE...$HEAD"
+          else
+            zero='0000000000000000000000000000000000000000'
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "$zero" ]; then
+              range="$(git rev-parse "${AFTER}^" 2>/dev/null || echo "$AFTER")..$AFTER"
+            else
+              range="$BEFORE..$AFTER"
+            fi
+          fi
+          changed="$(git diff --name-only "$range" 2>/dev/null || git ls-files)"
+          echo "$changed" | sed 's/^/  /'
+          if echo "$changed" | grep -Eq '^(vscode/|\.github/workflows/ci\.yml)'; then
+            echo "vscode=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "vscode=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  no-ai-attribution:
+    # Commit messages, author/committer identities and the PR title/body carry
+    # no AI/assistant attribution. Same script as the main Constly repo.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Scan commits
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            git fetch --no-tags --quiet origin "$PR_BASE" "$PR_HEAD" || true
+            bash vscode/scripts/check-no-ai-attribution.sh --range "$PR_BASE" "$PR_HEAD"
+          else
+            base="$PUSH_BEFORE"
+            zero='0000000000000000000000000000000000000000'
+            if [ -z "$base" ] || [ "$base" = "$zero" ]; then
+              base="$(git rev-parse "${PUSH_AFTER}^" 2>/dev/null || echo "$PUSH_AFTER")"
+            fi
+            bash vscode/scripts/check-no-ai-attribution.sh --range "$base" "$PUSH_AFTER"
+          fi
+      - name: Scan PR title & body
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" > pr-text.txt
+          bash vscode/scripts/check-no-ai-attribution.sh --text pr-text.txt
+
+  vscode:
+    needs: changes
+    if: needs.changes.outputs.vscode == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: vscode
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: vscode/package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: vscode/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test:unit
+
+      - name: Build
+        run: pnpm build && pnpm compile-tests
+
+      - name: Integration tests (Linux, under Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm test:integration
+
+      - name: Integration tests
+        if: runner.os != 'Linux'
+        run: pnpm test:integration
+
+      - name: Activation self-test (E4 — the test must fail on a poisoned build, then pass)
+        # The script wraps vscode-test in xvfb-run itself when it is on Linux
+        # without a DISPLAY.
+        run: pnpm test:activation-self-test
+
+      - name: Package
+        run: pnpm package
+
+      - name: Package guard (vsce ls, no probe marker, < 1 MiB) — and its self-test
+        run: |
+          bash scripts/check-package.test.sh
+          pnpm check:package
+
+      - name: Upload .vsix
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: constly-vscode-${{ github.sha }}
+          path: vscode/*.vsix
+          if-no-files-found: error
