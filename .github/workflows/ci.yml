@@ -150,6 +150,9 @@ jobs:
         # without a DISPLAY.
         run: pnpm test:activation-self-test
 
+      - name: Lint guard self-test (module-scope fs/child_process capture must fail lint)
+        run: pnpm test:lint-guard
+
       - name: Package
         run: pnpm package
 

@@ -140,7 +140,8 @@
     "test:integration": "vscode-test --label integration",
     "test:activation": "vscode-test --label activation",
     "test:activation-self-test": "bash scripts/activation-self-test.sh",
-    "test": "pnpm test:unit && pnpm test:integration && pnpm test:activation-self-test",
+    "test:lint-guard": "bash scripts/lint-guard-self-test.sh",
+    "test": "pnpm test:unit && pnpm test:lint-guard && pnpm test:integration && pnpm test:activation-self-test",
     "package": "vsce package --no-dependencies --baseContentUrl https://github.com/RunTheWall/constly-ide/blob/main/vscode --baseImagesUrl https://github.com/RunTheWall/constly-ide/raw/main/vscode",
     "check:package": "bash scripts/check-package.sh"
   },
