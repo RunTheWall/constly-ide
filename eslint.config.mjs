@@ -17,35 +17,57 @@ const shellBans = [
 // The activation test (test/activation) attributes fs/child_process calls to
 // the bundle by patching the MODULE objects. A function captured at module
 // scope — a named or default import, a destructured require, a top-level
-// alias — bypasses the patch and would blind the spies while their positive
-// control stayed green. src/ therefore imports these modules as namespaces
-// only and looks every function up at call time. scripts/lint-guard-self-test.sh
-// proves each of these selectors fires.
+// alias or assignment, a class field — bypasses the patch and would blind the
+// spies while their positive control stayed green.
+//
+// The guard has two halves. (1) The watched modules may enter src/ only as
+// namespace imports under a canonical local name (fs, fsp, cp) — or as a
+// top-level require under that same name — so the namespace is always
+// recognisable by name. (2) Every module-scope capture form is banned when
+// keyed on one of those names, and nothing else: `const { join } = path` or
+// `export const T = vscode.ConfigurationTarget.Global` stay legal, so nobody
+// learns to write eslint-disable comments that would also hide a real capture.
+// scripts/lint-guard-self-test.sh proves each selector fires and each innocent
+// form passes.
 const CAPTURE_MSG =
-  "fs/child_process functions must be looked up at call time (namespace import, no module-scope alias or destructuring) so the activation spies see them.";
-const WATCHED_MODULES = "/^(node:)?(fs|fs.promises|child_process)$/";
+  "fs/child_process functions must be looked up at call time (namespace import as fs/fsp/cp, no module-scope alias, assignment or destructuring) so the activation spies see them.";
+// Deliberately `fs\/promises`: require('fs/promises') is the same object as
+// fs.promises, and a captured function from it hides just as well.
+const WATCHED = "/^(node:)?(fs|fs\\/promises|child_process)$/";
+const NS = "/^(fs|fsp|cp)$/";
+/** `<field>` is a MemberExpression rooted in a watched namespace: `fs.x` or `fs.promises.x`. */
+const rootedInNs = (field) => `:matches([${field}.object.name=${NS}], [${field}.object.object.name=${NS}])`;
+/** `<field>` is a watched namespace or a member of one: `cp` or `fs.promises`. */
+const isNsOrMember = (field) => `:matches([${field}.name=${NS}], [${field}.object.name=${NS}])`;
+const requireOf = (field) => `[${field}.type='CallExpression'][${field}.callee.name='require'][${field}.arguments.0.value=${WATCHED}]`;
+
 const captureBans = [
-  { selector: `ImportDeclaration[source.value=${WATCHED_MODULES}] > ImportSpecifier`, message: CAPTURE_MSG },
-  { selector: `ImportDeclaration[source.value=${WATCHED_MODULES}] > ImportDefaultSpecifier`, message: CAPTURE_MSG },
+  // (1) how the watched modules may enter src/
+  { selector: `ImportDeclaration[source.value=${WATCHED}] > ImportSpecifier`, message: CAPTURE_MSG },
+  { selector: `ImportDeclaration[source.value=${WATCHED}] > ImportDefaultSpecifier`, message: CAPTURE_MSG },
+  { selector: `ImportDeclaration[source.value=${WATCHED}] > ImportNamespaceSpecifier[local.name!=${NS}]`, message: CAPTURE_MSG },
+  { selector: `Program > VariableDeclaration > VariableDeclarator${requireOf("init")}[id.name!=${NS}]`, message: CAPTURE_MSG },
   {
-    selector: `VariableDeclarator[id.type='ObjectPattern'][init.type='CallExpression'][init.callee.name='require'][init.arguments.0.value=${WATCHED_MODULES}]`,
+    selector: `Program > VariableDeclaration > VariableDeclarator[init.type='TSAsExpression']${requireOf("init.expression")}[id.name!=${NS}]`,
     message: CAPTURE_MSG,
   },
+  // (2) capture forms, keyed on the namespace (or on the required module)
+  { selector: `VariableDeclarator[id.type='ObjectPattern']${requireOf("init")}`, message: CAPTURE_MSG },
+  { selector: `VariableDeclarator[id.type='ObjectPattern'][init.type='TSAsExpression']${requireOf("init.expression")}`, message: CAPTURE_MSG },
+  { selector: `VariableDeclarator[init.type='MemberExpression']${requireOf("init.object")}`, message: CAPTURE_MSG },
+  { selector: `Program > VariableDeclaration > VariableDeclarator[init.type='MemberExpression']${rootedInNs("init")}`, message: CAPTURE_MSG },
   {
-    selector:
-      "VariableDeclarator[init.type='MemberExpression'][init.object.type='CallExpression'][init.object.callee.name='require']",
+    selector: `Program > ExportNamedDeclaration > VariableDeclaration > VariableDeclarator[init.type='MemberExpression']${rootedInNs("init")}`,
     message: CAPTURE_MSG,
   },
-  { selector: "Program > VariableDeclaration > VariableDeclarator[init.type='MemberExpression']", message: CAPTURE_MSG },
+  { selector: `Program > VariableDeclaration > VariableDeclarator[id.type='ObjectPattern']${isNsOrMember("init")}`, message: CAPTURE_MSG },
   {
-    selector: "Program > ExportNamedDeclaration > VariableDeclaration > VariableDeclarator[init.type='MemberExpression']",
+    selector: `Program > ExportNamedDeclaration > VariableDeclaration > VariableDeclarator[id.type='ObjectPattern']${isNsOrMember("init")}`,
     message: CAPTURE_MSG,
   },
-  { selector: "Program > VariableDeclaration > VariableDeclarator[id.type='ObjectPattern']", message: CAPTURE_MSG },
-  {
-    selector: "Program > ExportNamedDeclaration > VariableDeclaration > VariableDeclarator[id.type='ObjectPattern']",
-    message: CAPTURE_MSG,
-  },
+  { selector: `Program > ExpressionStatement > AssignmentExpression[right.type='MemberExpression']${rootedInNs("right")}`, message: CAPTURE_MSG },
+  { selector: `Program > ExpressionStatement > AssignmentExpression[left.type='ObjectPattern']${isNsOrMember("right")}`, message: CAPTURE_MSG },
+  { selector: `PropertyDefinition[value.type='MemberExpression']${rootedInNs("value")}`, message: CAPTURE_MSG },
 ];
 
 export default tseslint.config(
