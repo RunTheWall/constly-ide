@@ -5,6 +5,7 @@ import {
   classifyPath,
   detectConstly,
   expandHome,
+  expandPath,
   expandWindowsEnv,
   innerBinaryOf,
   parseRegQuery,
@@ -39,6 +40,19 @@ describe("path expansion (no shell anywhere, so ~ and %VAR% are ours to expand)"
     );
     expect(expandWindowsEnv("%localappdata%\\Constly", env)).toBe("C:\\Users\\ada\\AppData\\Local\\Constly");
     expect(expandWindowsEnv("%NOPE%\\x", env)).toBe("%NOPE%\\x");
+  });
+
+  it("expandPath: ~ on every platform, %VAR% on Windows only (a POSIX file name may contain %)", () => {
+    const env = { LOCALAPPDATA: "C:\\Users\\ada\\AppData\\Local" };
+    const win = { platform: "win32" as const, homedir: () => "C:\\Users\\ada", env };
+    expect(expandPath("%LOCALAPPDATA%\\Constly\\constly.exe", win)).toBe("C:\\Users\\ada\\AppData\\Local\\Constly\\constly.exe");
+    expect(expandPath("~\\Constly.app", win)).toBe("C:\\Users\\ada\\Constly.app");
+    for (const platform of ["darwin", "linux"] as const) {
+      const posix = { platform, homedir: () => "/Users/ada", env };
+      expect(expandPath("/opt/%LOCALAPPDATA%/constly", posix)).toBe("/opt/%LOCALAPPDATA%/constly");
+      expect(expandPath("~/Applications/Constly.app", posix)).toBe("/Users/ada/Applications/Constly.app");
+      expect(expandPath("  ~/x  ", posix)).toBe("/Users/ada/x");
+    }
   });
 
   it("maps a bundle to its inner binary", () => {
@@ -162,13 +176,13 @@ describe("detectConstly — Windows", () => {
   const WHERE = "C:\\Windows\\System32\\where.exe";
   const HKCU = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Constly";
   const HKLM = "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Constly";
-  const regOutput = (location: string, binary?: string) =>
+  const regOutput = (location: string, binary?: string, type = "REG_SZ") =>
     [
       "",
       "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Constly",
       "    DisplayName    REG_SZ    Constly",
       "    DisplayVersion    REG_SZ    4.7.0",
-      `    InstallLocation    REG_SZ    ${location}`,
+      `    InstallLocation    ${type}    ${location}`,
       ...(binary ? [`    MainBinaryName    REG_SZ    ${binary}`] : []),
       "    UninstallString    REG_SZ    \"C:\\Users\\ada\\AppData\\Local\\Constly\\uninstall.exe\"",
       "",
@@ -200,6 +214,22 @@ describe("detectConstly — Windows", () => {
     expect(deps.runs).toEqual([{ file: REG, args: ["query", HKCU] }]);
   });
 
+  it("a REG_EXPAND_SZ InstallLocation is expanded after its quotes are stripped", async () => {
+    const exe = "C:\\Users\\ada\\AppData\\Local\\Constly\\constly.exe";
+    const deps = fakeProbeDeps({
+      platform: "win32",
+      env,
+      files: { [exe]: "exe" },
+      run: (file, args) =>
+        file === REG && args[1] === HKCU ? ok(regOutput('"%LOCALAPPDATA%\\Constly"', "constly.exe", "REG_EXPAND_SZ")) : undefined,
+    });
+    expect(await detectConstly("", deps)).toEqual({
+      kind: "found",
+      target: { kind: "binary", exe, degraded: false },
+      source: "registry-hkcu",
+    });
+  });
+
   it("then HKLM (per-machine installs); MainBinaryName defaults to constly.exe", async () => {
     const exe = "C:\\Program Files\\Constly\\constly.exe";
     const deps = fakeProbeDeps({
@@ -229,13 +259,14 @@ describe("detectConstly — Windows", () => {
       platform: "win32",
       env,
       files: { [exe]: "exe" },
-      run: (file, args) => (file === WHERE && args[0] === "constly" ? ok(`${exe}\r\nD:\\other\\constly.exe\r\n`) : fail(1)),
+      run: (file, args) => (file === WHERE && args[0] === "constly.exe" ? ok(`${exe}\r\nD:\\other\\constly.exe\r\n`) : fail(1)),
     });
     expect(await detectConstly("", deps)).toMatchObject({ source: "where", target: { exe } });
 
     const none = fakeProbeDeps({ platform: "win32", env, run: () => fail(1) });
     expect(await detectConstly("", none)).toEqual({ kind: "not-found" });
     expect(none.runs.map((r) => r.file)).toEqual([REG, REG, WHERE]);
+    expect(none.runs[2].args).toEqual(["constly.exe"]);
   });
 
   it("a registry probe that times out falls through to the next step", async () => {

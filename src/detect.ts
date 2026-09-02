@@ -70,8 +70,11 @@ export function expandWindowsEnv(p: string, env: Readonly<Record<string, string 
   });
 }
 
-export function expandPath(p: string, deps: Pick<ProbeDeps, "homedir" | "env">): string {
-  return expandHome(expandWindowsEnv(p.trim(), deps.env), deps.homedir());
+/** `~` everywhere; `%VAR%` on Windows only — on POSIX a percent sign is an ordinary file-name character. */
+export function expandPath(p: string, deps: Pick<ProbeDeps, "platform" | "homedir" | "env">): string {
+  const trimmed = p.trim();
+  const withEnv = deps.platform === "win32" ? expandWindowsEnv(trimmed, deps.env) : trimmed;
+  return expandHome(withEnv, deps.homedir());
 }
 
 // ---------------------------------------------------------------- classify
@@ -166,9 +169,11 @@ async function windowsUninstallEntry(
   const r = await deps.run(windowsSystemTool(deps, "reg.exe"), ["query", key]);
   if (r.status !== 0) return undefined;
   const values = parseRegQuery(r.stdout);
-  const location = values.InstallLocation ? stripQuotes(values.InstallLocation) : "";
+  // A REG_EXPAND_SZ value arrives unexpanded from `reg query`; strip NSIS's
+  // literal quotes first, then expand %VAR% the way the shell would have.
+  const location = values.InstallLocation ? expandWindowsEnv(stripQuotes(values.InstallLocation), deps.env) : "";
   if (!location) return undefined;
-  const binary = values.MainBinaryName ? stripQuotes(values.MainBinaryName) : WINDOWS_EXE;
+  const binary = values.MainBinaryName ? expandWindowsEnv(stripQuotes(values.MainBinaryName), deps.env) : WINDOWS_EXE;
   const exe = path.win32.join(location, binary);
   return deps.isExecutableFile(exe) ? { kind: "binary", exe, degraded: false } : undefined;
 }
@@ -187,7 +192,8 @@ async function detectWindows(deps: ProbeDeps): Promise<Detection> {
     }
   }
 
-  const r = await deps.run(windowsSystemTool(deps, "where.exe"), [LINUX_BINARY]);
+  // `where constly.exe` resolves the same file as `where constly`; name the thing we look for.
+  const r = await deps.run(windowsSystemTool(deps, "where.exe"), [WINDOWS_EXE]);
   if (r.status === 0) {
     const first = r.stdout.split(/\r?\n/).map((l) => l.trim()).find((l) => l !== "");
     if (first && deps.isExecutableFile(first)) {
