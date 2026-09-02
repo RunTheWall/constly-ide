@@ -6,7 +6,7 @@
 # eslint.config.mjs forbids, in src/, every way of capturing an fs/child_process
 # function at module scope (named/default imports, a renamed namespace,
 # destructured require, top-level aliases, assignments, class fields, optional
-# chains, array patterns): the
+# chains, array and object literals): the
 # activation spies patch the module objects, and a captured function would
 # slip past them while the positive control stayed green. The guard is keyed
 # on the canonical namespace names (fs, fsp, cp), so innocent aliases of other
@@ -176,6 +176,15 @@ expect_fail "array pattern: const [f] = [fs.existsSync]" \
 const [f] = [fs.existsSync];
 export { f };'
 
+expect_fail "object literal: const ops = { exists: fs.existsSync }" \
+'import * as fs from "node:fs";
+const ops = { exists: fs.existsSync, read: fs.readFileSync };
+export { ops };'
+
+expect_fail "exported object literal with an optional chain: export const ops = { spawn: cp?.spawn }" \
+'import * as cp from "node:child_process";
+export const ops = { spawn: cp?.spawn };'
+
 # ── allowed: the canonical form, and innocent aliases of other modules ──────
 
 expect_pass "namespace imports looked up at call time (fs, cp), in-function require alias" \
@@ -219,6 +228,15 @@ expect_pass "innocent array pattern: const [a] = [path.sep]" \
 'import * as path from "node:path";
 const [a] = [path.sep];
 export { a };'
+
+expect_pass "innocent object literal: const o = { sep: path.sep }" \
+'import * as path from "node:path";
+const o = { sep: path.sep };
+export { o };'
+
+expect_pass "default parameter evaluated per call: (h = fs.existsSync) => h" \
+'import * as fs from "node:fs";
+export const g = (h = fs.existsSync): unknown => h;'
 
 if [ "$failed" -ne 0 ]; then
   echo "✖ lint guard self-test: a fixture misbehaved" >&2

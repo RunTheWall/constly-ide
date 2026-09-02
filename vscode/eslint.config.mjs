@@ -88,6 +88,13 @@ const captureBans = [
     selector: `Program > ExportNamedDeclaration > VariableDeclaration > VariableDeclarator[id.type='ArrayPattern'] > ArrayExpression MemberExpression${selfRootedInNs}`,
     message: CAPTURE_MSG,
   },
+  // Object literal: `const ops = { exists: fs.existsSync }` captures the same
+  // way through a property value; same descendant shape as the array case.
+  { selector: `Program > VariableDeclaration > VariableDeclarator > ObjectExpression MemberExpression${selfRootedInNs}`, message: CAPTURE_MSG },
+  {
+    selector: `Program > ExportNamedDeclaration > VariableDeclaration > VariableDeclarator > ObjectExpression MemberExpression${selfRootedInNs}`,
+    message: CAPTURE_MSG,
+  },
 ];
 
 export default tseslint.config(
