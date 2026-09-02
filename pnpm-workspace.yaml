@@ -1,0 +1,11 @@
+# This directory is its own pnpm root: a nested pnpm-workspace.yaml stops pnpm
+# walking up into a parent workspace (the extension is self-contained and must
+# install, build and test from here alone). It also carries pnpm's build-script
+# allowlist: esbuild's optional install script is the only one this tree runs.
+# vsce's signing helper and keytar are dev-time transitive deps of @vscode/vsce
+# whose install scripts fetch native binaries; `vsce package` needs neither.
+packages: []
+allowBuilds:
+  esbuild: true
+  '@vscode/vsce-sign': false
+  keytar: false

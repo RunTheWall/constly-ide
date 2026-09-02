@@ -1,0 +1,161 @@
+{
+  "name": "constly",
+  "displayName": "Open Markdown in Constly",
+  "description": "Open Markdown files in Constly — the byte-faithful WYSIWYG markdown editor. Requires Constly.",
+  "version": "0.1.0",
+  "publisher": "constly",
+  "license": "MIT",
+  "homepage": "https://constly.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RunTheWall/constly-ide.git",
+    "directory": "vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/RunTheWall/constly-ide/issues"
+  },
+  "pricing": "Free",
+  "qna": "marketplace",
+  "icon": "icon.png",
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "markdown",
+    "wysiwyg",
+    "typora",
+    "editor",
+    "writing"
+  ],
+  "engines": {
+    "vscode": "^1.85.0",
+    "node": ">=18"
+  },
+  "packageManager": "pnpm@11.5.3",
+  "extensionKind": [
+    "ui"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onUri"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "constly.open",
+        "title": "Open in Constly",
+        "category": "Constly",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "constly.locate",
+        "title": "Locate Constly…",
+        "category": "Constly"
+      },
+      {
+        "command": "constly.install",
+        "title": "Install Constly…",
+        "category": "Constly"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "constly.open",
+          "group": "navigation",
+          "when": "resourceScheme == file && resourceExtname =~ /\\.(md|markdown|mdx)$/i && !isWeb && !isInDiffEditor && config.constly.showEditorTitleButton"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "constly.open",
+          "group": "navigation",
+          "when": "resourceScheme == file && resourceExtname =~ /\\.(md|markdown|mdx)$/i && !isWeb && !isInDiffEditor"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "constly.open",
+          "group": "navigation",
+          "when": "resourceScheme == file && resourceExtname =~ /\\.(md|markdown|mdx)$/i && !isWeb && !isInDiffEditor"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "constly.open",
+          "group": "navigation",
+          "when": "resourceScheme == file && resourceExtname =~ /\\.(md|markdown|mdx)$/i && !isWeb && !isInDiffEditor"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Constly",
+      "properties": {
+        "constly.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Explicit path to Constly: the `Constly.app` bundle on macOS, or the `constly` executable elsewhere. Overrides detection. Leave empty to find Constly automatically. A workspace cannot set this."
+        },
+        "constly.afterOpen": {
+          "type": "string",
+          "enum": [
+            "keep",
+            "close"
+          ],
+          "enumDescriptions": [
+            "Keep the file open in VS Code (it reloads when Constly saves).",
+            "Close the file's tab in VS Code once it has been handed to Constly (default)."
+          ],
+          "default": "close",
+          "scope": "window",
+          "description": "What happens to the VS Code tab after a file is opened in Constly. Constly edits the file in place, so the default closes the tab rather than leaving two editors on one file."
+        },
+        "constly.passCaret": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Put Constly's cursor where VS Code's was (needs Constly 4.7.0 or later)."
+        },
+        "constly.showEditorTitleButton": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Show the \"Open in Constly\" button in the editor title bar of Markdown files."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node esbuild.mjs",
+    "build": "node esbuild.mjs",
+    "build:activation-probe": "node esbuild.mjs --activation-probe",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "lint": "eslint src test esbuild.mjs",
+    "test:unit": "vitest run",
+    "compile-tests": "tsc -p tsconfig.test.json",
+    "pretest:integration": "node esbuild.mjs && tsc -p tsconfig.test.json",
+    "test:integration": "vscode-test --label integration",
+    "test:activation": "vscode-test --label activation",
+    "test:activation-self-test": "bash scripts/activation-self-test.sh",
+    "test": "pnpm test:unit && pnpm test:integration && pnpm test:activation-self-test",
+    "package": "vsce package --no-dependencies --baseContentUrl https://github.com/RunTheWall/constly-ide/blob/main/vscode --baseImagesUrl https://github.com/RunTheWall/constly-ide/raw/main/vscode",
+    "check:package": "bash scripts/check-package.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "~18.19.0",
+    "@types/vscode": "~1.85.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.2",
+    "eslint": "^10",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8",
+    "vitest": "^3"
+  }
+}
