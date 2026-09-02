@@ -5,7 +5,8 @@
 #
 # eslint.config.mjs forbids, in src/, every way of capturing an fs/child_process
 # function at module scope (named/default imports, a renamed namespace,
-# destructured require, top-level aliases, assignments, class fields): the
+# destructured require, top-level aliases, assignments, class fields, optional
+# chains, array patterns): the
 # activation spies patch the module objects, and a captured function would
 # slip past them while the positive control stayed green. The guard is keyed
 # on the canonical namespace names (fs, fsp, cp), so innocent aliases of other
@@ -146,6 +147,35 @@ export class A {
   static f = fs.existsSync;
 }'
 
+# ── banned: the same captures through optional chains and array patterns ────
+
+expect_fail "optional chain alias: const f = fs?.existsSync" \
+'import * as fs from "node:fs";
+const f = fs?.existsSync;
+export { f };'
+
+expect_fail "nested optional chain alias: const r = fs?.promises?.readFile" \
+'import * as fs from "node:fs";
+const r = fs?.promises?.readFile;
+export { r };'
+
+expect_fail "optional chain assignment: f = fs?.existsSync" \
+'import * as fs from "node:fs";
+let f: unknown;
+f = fs?.existsSync;
+export { f };'
+
+expect_fail "optional chain class field: static f = fs?.existsSync" \
+'import * as fs from "node:fs";
+export class A {
+  static f = fs?.existsSync;
+}'
+
+expect_fail "array pattern: const [f] = [fs.existsSync]" \
+'import * as fs from "node:fs";
+const [f] = [fs.existsSync];
+export { f };'
+
 # ── allowed: the canonical form, and innocent aliases of other modules ──────
 
 expect_pass "namespace imports looked up at call time (fs, cp), in-function require alias" \
@@ -179,6 +209,16 @@ expect_pass "innocent top-level alias: const RE = identity.IDE_ID_RE" \
 'import * as identity from "./identity";
 const RE = identity.IDE_ID_RE;
 export const f = (s: string): boolean => RE.test(s);'
+
+expect_pass "innocent optional chain: const t = vscode?.ConfigurationTarget" \
+'import * as vscode from "vscode";
+const t = vscode?.ConfigurationTarget;
+export { t };'
+
+expect_pass "innocent array pattern: const [a] = [path.sep]" \
+'import * as path from "node:path";
+const [a] = [path.sep];
+export { a };'
 
 if [ "$failed" -ne 0 ]; then
   echo "✖ lint guard self-test: a fixture misbehaved" >&2

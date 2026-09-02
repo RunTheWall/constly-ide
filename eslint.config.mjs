@@ -39,6 +39,8 @@ const NS = "/^(fs|fsp|cp)$/";
 const rootedInNs = (field) => `:matches([${field}.object.name=${NS}], [${field}.object.object.name=${NS}])`;
 /** `<field>` is a watched namespace or a member of one: `cp` or `fs.promises`. */
 const isNsOrMember = (field) => `:matches([${field}.name=${NS}], [${field}.object.name=${NS}])`;
+/** The node itself is a MemberExpression rooted in a watched namespace. */
+const selfRootedInNs = `:matches([object.name=${NS}], [object.object.name=${NS}])`;
 const requireOf = (field) => `[${field}.type='CallExpression'][${field}.callee.name='require'][${field}.arguments.0.value=${WATCHED}]`;
 
 const captureBans = [
@@ -68,6 +70,24 @@ const captureBans = [
   { selector: `Program > ExpressionStatement > AssignmentExpression[right.type='MemberExpression']${rootedInNs("right")}`, message: CAPTURE_MSG },
   { selector: `Program > ExpressionStatement > AssignmentExpression[left.type='ObjectPattern']${isNsOrMember("right")}`, message: CAPTURE_MSG },
   { selector: `PropertyDefinition[value.type='MemberExpression']${rootedInNs("value")}`, message: CAPTURE_MSG },
+  // Optional chaining: `fs?.existsSync` is a ChainExpression wrapping the
+  // MemberExpression, so the forms above would miss it while the capture still
+  // happens at module load. Same shapes, keyed through `.expression`.
+  { selector: `Program > VariableDeclaration > VariableDeclarator[init.type='ChainExpression']${rootedInNs("init.expression")}`, message: CAPTURE_MSG },
+  {
+    selector: `Program > ExportNamedDeclaration > VariableDeclaration > VariableDeclarator[init.type='ChainExpression']${rootedInNs("init.expression")}`,
+    message: CAPTURE_MSG,
+  },
+  { selector: `Program > ExpressionStatement > AssignmentExpression[right.type='ChainExpression']${rootedInNs("right.expression")}`, message: CAPTURE_MSG },
+  { selector: `PropertyDefinition[value.type='ChainExpression']${rootedInNs("value.expression")}`, message: CAPTURE_MSG },
+  // Array pattern: `const [f] = [fs.existsSync]` captures through an array
+  // literal; any member of a watched namespace inside that literal is banned
+  // (a call there would be a module-load probe, which is worse, not better).
+  { selector: `Program > VariableDeclaration > VariableDeclarator[id.type='ArrayPattern'] > ArrayExpression MemberExpression${selfRootedInNs}`, message: CAPTURE_MSG },
+  {
+    selector: `Program > ExportNamedDeclaration > VariableDeclaration > VariableDeclarator[id.type='ArrayPattern'] > ArrayExpression MemberExpression${selfRootedInNs}`,
+    message: CAPTURE_MSG,
+  },
 ];
 
 export default tseslint.config(
