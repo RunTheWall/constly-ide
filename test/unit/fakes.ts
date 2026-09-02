@@ -87,8 +87,11 @@ export interface RecordedSpawn {
 export interface FakeLaunchDeps extends LaunchDeps {
   spawns: RecordedSpawn[];
   runs: RecordedRun[];
-  sleeps: number[];
-  /** Resolve the pending sleep(s). */
+  /** The delay of every timer started. */
+  timers: number[];
+  /** How many timers were cancelled before firing. */
+  cancelled: number;
+  /** Fire every pending timer. */
   wake(): void;
 }
 
@@ -103,16 +106,22 @@ export function fakeLaunchDeps(options: {
 }): FakeLaunchDeps {
   const spawns: RecordedSpawn[] = [];
   const runs: RecordedRun[] = [];
-  const sleeps: number[] = [];
-  let wakers: (() => void)[] = [];
-  return {
+  const timers: number[] = [];
+  let pending: { callback: () => void; live: boolean }[] = [];
+  const deps: FakeLaunchDeps = {
     spawns,
     runs,
-    sleeps,
+    timers,
+    cancelled: 0,
     wake: () => {
-      const w = wakers;
-      wakers = [];
-      for (const f of w) f();
+      const due = pending;
+      pending = [];
+      for (const t of due) {
+        if (!t.live) continue;
+        // A fired timer is no longer cancellable (clearTimeout after firing is a no-op).
+        t.live = false;
+        t.callback();
+      }
     },
     platform: options.platform,
     homedir: () => options.homedir ?? "/Users/ada",
@@ -131,11 +140,18 @@ export function fakeLaunchDeps(options: {
       runs.push({ file, args: [...args] });
       return options.run?.(file, args) ?? enoent();
     },
-    sleep: (ms) => {
-      sleeps.push(ms);
-      return new Promise((resolve) => wakers.push(resolve));
+    setTimer: (ms, callback) => {
+      timers.push(ms);
+      const entry = { callback, live: true };
+      pending.push(entry);
+      return () => {
+        if (!entry.live) return;
+        entry.live = false;
+        deps.cancelled += 1;
+      };
     },
   };
+  return deps;
 }
 
 /** Let queued microtasks run. */

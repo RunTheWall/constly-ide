@@ -146,7 +146,7 @@ describe("launchOnce — spawn discipline", () => {
     expect(spawn.child.unrefCalls).toBe(1);
   });
 
-  it("returns when the child exits, or after the 1.5 s settle window if it does not", async () => {
+  it("returns when the child exits — cancelling the settle timer — or after the 1.5 s settle window if it does not", async () => {
     const exits = fakeLaunchDeps({ platform: "linux", onSpawn: (s) => s.child.emit("spawn") });
     let done = false;
     const p = launchOnce({ target: linuxBin, path: "/abs/a.md", argv: ARGV }, exits).then(() => {
@@ -157,7 +157,8 @@ describe("launchOnce — spawn discipline", () => {
     exits.spawns[0].child.emit("exit", 0, null);
     await p;
     expect(done).toBe(true);
-    expect(exits.sleeps).toEqual([LAUNCH_SETTLE_MS]);
+    expect(exits.timers).toEqual([LAUNCH_SETTLE_MS]);
+    expect(exits.cancelled).toBe(1); // nothing outlives the launch
 
     const lingers = fakeLaunchDeps({ platform: "linux", onSpawn: (s) => s.child.emit("spawn") });
     let settled = false;
@@ -169,6 +170,8 @@ describe("launchOnce — spawn discipline", () => {
     lingers.wake();
     await q;
     expect(settled).toBe(true);
+    expect(lingers.timers).toEqual([LAUNCH_SETTLE_MS]);
+    expect(lingers.cancelled).toBe(0);
   });
 
   it("rejects when the process cannot be started (error event or a synchronous throw)", async () => {

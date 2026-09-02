@@ -55,7 +55,8 @@ export interface LaunchDeps {
   spawn(file: string, args: readonly string[], options: SpawnOptions): SpawnedProcess;
   /** For `pgrep`: same contract as ProbeDeps.run. */
   run(file: string, args: readonly string[]): Promise<RunResult>;
-  sleep(ms: number): Promise<void>;
+  /** Start a timer; the returned function cancels it (a no-op once it has fired). */
+  setTimer(ms: number, callback: () => void): () => void;
 }
 
 function runWithExecFile(file: string, args: readonly string[]): Promise<RunResult> {
@@ -127,6 +128,9 @@ export function nodeLaunchDeps(): LaunchDeps {
         cwd: options.cwd,
       }),
     run: runWithExecFile,
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    setTimer: (ms, callback) => {
+      const timer = setTimeout(callback, ms);
+      return () => clearTimeout(timer);
+    },
   };
 }

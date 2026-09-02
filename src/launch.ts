@@ -90,21 +90,21 @@ function spawnDetached(
       reject(err);
       return;
     }
+    // Exit or the settle window, whichever comes first — and the loser is
+    // cancelled, so an early exit leaves no timer running behind it.
     let settled = false;
-    const finish = (): void => {
+    let cancelSettle: (() => void) | undefined;
+    const done = (outcome: () => void): void => {
       if (settled) return;
       settled = true;
-      resolve();
+      cancelSettle?.();
+      outcome();
     };
-    child.once("error", (err) => {
-      if (settled) return;
-      settled = true;
-      reject(err);
-    });
-    child.once("exit", finish);
+    child.once("error", (err) => done(() => reject(err)));
+    child.once("exit", () => done(resolve));
     child.once("spawn", () => {
       child.unref();
-      void deps.sleep(LAUNCH_SETTLE_MS).then(finish);
+      if (!settled) cancelSettle = deps.setTimer(LAUNCH_SETTLE_MS, () => done(resolve));
     });
   });
 }
