@@ -4,7 +4,7 @@
 // time in order, then apply `afterOpen`.
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { caretFromZeroBased, fromIdFor, planLaunches } from "./argv";
+import { caretFromZeroBased, contractPath, fromIdFor, planLaunches } from "./argv";
 import type { DetectFn, DetectionCache, Target } from "./detect";
 import { DOWNLOAD_URL } from "./identity";
 import type { LaunchFn } from "./launch";
@@ -171,7 +171,7 @@ export async function handOff(uriArg: unknown, urisArg: unknown, deps: HandOffDe
       ? caretFromZeroBased(editor.selection.active.line, editor.selection.active.character)
       : undefined;
   const plan = planLaunches(
-    files.map((u) => u.fsPath),
+    files.map((u) => contractPath(u.fsPath)),
     { goto, from: fromIdFor(vscode.env.uriScheme) },
   );
 

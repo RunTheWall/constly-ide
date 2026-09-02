@@ -23,6 +23,19 @@ export function fromIdFor(uriScheme: string | undefined): string | undefined {
   return IDE_ID_RE.test(uriScheme) ? uriScheme : undefined;
 }
 
+/**
+ * The path spelling handed to Constly. `Uri.fsPath` lower-cases a Windows
+ * drive letter (`c:\…`); Constly de-duplicates through the canonical path, so
+ * that is still one tab, but the spelling passed is what its recents and
+ * session file keep — and Explorer hands it `C:\`. Upper-case a leading
+ * `[a-z]:` on Windows only; everything else stays byte for byte (UNC paths,
+ * relative-looking input, and every POSIX path are untouched).
+ */
+export function contractPath(fsPath: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform !== "win32") return fsPath;
+  return /^[a-z]:/.test(fsPath) ? fsPath[0].toUpperCase() + fsPath.slice(1) : fsPath;
+}
+
 export interface ArgvOptions {
   goto?: Caret | undefined;
   from?: string | undefined;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildArgv, caretFromZeroBased, fromIdFor, planLaunches } from "../../src/argv";
+import { buildArgv, caretFromZeroBased, contractPath, fromIdFor, planLaunches } from "../../src/argv";
 
 describe("argv — IDE contract v1", () => {
   it("produces the worked example byte for byte: --goto=42:9 --from=vscode -- /home/ada/notes/plan.md", () => {
@@ -37,6 +37,27 @@ describe("argv — IDE contract v1", () => {
     expect(plan[1].argv).toEqual(["--from=cursor", "--", "/abs/b.md"]);
     expect(plan[2].argv).toEqual(["--from=cursor", "--", "/abs/c.md"]);
     expect(plan.filter((p) => p.argv.some((a) => a.startsWith("--goto="))).length).toBe(1);
+  });
+
+  describe("contractPath — the spelling Constly keeps", () => {
+    it("upper-cases a lower-case drive letter on Windows (Uri.fsPath lower-cases it; Explorer hands Constly C:\\)", () => {
+      expect(contractPath("c:\\Users\\a\\x.md", "win32")).toBe("C:\\Users\\a\\x.md");
+      expect(contractPath("c:/Users/a/x.md", "win32")).toBe("C:/Users/a/x.md");
+      expect(contractPath("C:\\Users\\a\\x.md", "win32")).toBe("C:\\Users\\a\\x.md");
+    });
+
+    it("leaves UNC and relative-looking input byte for byte", () => {
+      for (const p of ["\\\\server\\share\\x.md", "\\\\?\\C:\\x.md", "foo\\bar.md", ".\\x.md", "c\\x.md", "c", ""]) {
+        expect(contractPath(p, "win32")).toBe(p);
+      }
+    });
+
+    it("touches nothing on POSIX platforms", () => {
+      for (const platform of ["darwin", "linux"] as const) {
+        expect(contractPath("/home/a/x.md", platform)).toBe("/home/a/x.md");
+        expect(contractPath("c:\\Users\\a\\x.md", platform)).toBe("c:\\Users\\a\\x.md");
+      }
+    });
   });
 
   describe("fromIdFor — the raw uriScheme only if it matches ^[a-z][a-z0-9-]{0,31}$", () => {

@@ -5,6 +5,7 @@
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as vscode from "vscode";
+import { contractPath } from "../../src/argv";
 import type { Detection } from "../../src/detect";
 import type { ConstlyExtensionApi } from "../../src/extension";
 import type { HandOffResult } from "../../src/handoff";
@@ -82,7 +83,7 @@ suite("Constly bridge — commands", () => {
       return found;
     });
     api.test.setLauncher(async (inv) => {
-      const doc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === inv.path);
+      const doc = vscode.workspace.textDocuments.find((d) => contractPath(d.uri.fsPath) === inv.path);
       calls.push({ ...inv, dirtyAtLaunch: doc?.isDirty === true });
     });
     await setConfig("afterOpen", "keep");
@@ -121,8 +122,8 @@ suite("Constly bridge — commands", () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0].dirtyAtLaunch, false, "the launcher saw a clean document");
     assert.deepEqual(calls[0].target, fakeTarget);
-    assert.equal(calls[0].path, editor.document.uri.fsPath);
-    assert.deepEqual([...calls[0].argv], ["--goto=3:5", ...expectedFrom(), "--", editor.document.uri.fsPath]);
+    assert.equal(calls[0].path, contractPath(editor.document.uri.fsPath));
+    assert.deepEqual([...calls[0].argv], ["--goto=3:5", ...expectedFrom(), "--", contractPath(editor.document.uri.fsPath)]);
   });
 
   test("passCaret = false: no --goto", async () => {
@@ -131,7 +132,7 @@ suite("Constly bridge — commands", () => {
     const editor = await openAndShow(file);
     const result = await run();
     assert.equal(result.status, "launched");
-    assert.deepEqual([...calls[0].argv], [...expectedFrom(), "--", editor.document.uri.fsPath]);
+    assert.deepEqual([...calls[0].argv], [...expectedFrom(), "--", contractPath(editor.document.uri.fsPath)]);
   });
 
   test("from an Explorer multi-selection: saves each dirty target and launches once per path, in order, without a caret", async () => {
@@ -147,14 +148,14 @@ suite("Constly bridge — commands", () => {
     const result = await run(uris[0], uris);
 
     assert.equal(result.status, "launched");
-    assert.deepEqual(result.launched, uris.map((u) => u.fsPath));
+    assert.deepEqual(result.launched, uris.map((u) => contractPath(u.fsPath)));
     assert.equal(docB.isDirty, false);
     assert.equal(docC.isDirty, false);
     assert.equal(fs.readFileSync(b, "utf8"), "b\nmore b\n");
     assert.equal(fs.readFileSync(c, "utf8"), "c\nmore c\n");
     assert.deepEqual(
       calls.map((x) => x.path),
-      uris.map((u) => u.fsPath),
+      uris.map((u) => contractPath(u.fsPath)),
     );
     assert.deepEqual(
       calls.map((x) => x.dirtyAtLaunch),
@@ -203,7 +204,7 @@ suite("Constly bridge — commands", () => {
     const remote = vscode.Uri.parse("vscode-remote://wsl%2BUbuntu/home/ada/notes.md");
     const result = await run(remote, [remote, vscode.Uri.file(g)]);
     assert.equal(result.status, "launched");
-    assert.deepEqual(result.launched, [vscode.Uri.file(g).fsPath]);
+    assert.deepEqual(result.launched, [contractPath(vscode.Uri.file(g).fsPath)]);
     assert.deepEqual(
       result.skipped.map((s) => s.reason),
       ["remote"],
@@ -266,7 +267,7 @@ suite("Constly bridge — commands", () => {
     const uris = [k, l, m].map((f) => vscode.Uri.file(f));
     const result = await run(uris[0], uris);
     assert.equal(result.status, "launch-failed");
-    assert.deepEqual(result.launched, [uris[0].fsPath]);
+    assert.deepEqual(result.launched, [contractPath(uris[0].fsPath)]);
     assert.match(result.error ?? "", /ENOENT/);
     assert.equal(calls.length, 1);
   });
