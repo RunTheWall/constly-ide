@@ -103,6 +103,16 @@ async function closeTabsShowing(uris: readonly vscode.Uri[]): Promise<void> {
 export async function handOff(uriArg: unknown, urisArg: unknown, deps: HandOffDeps): Promise<HandOffResult> {
   const result: HandOffResult = { status: "nothing-to-open", launched: [], skipped: [], argv: [] };
 
+  // Snapshot the caret NOW, before the first await. Everything below can take
+  // time (saves; a first Windows hand-off probes for up to ~6 s) and the active
+  // editor can change meanwhile — our own Save As offer calls showTextDocument.
+  // Reading activeTextEditor after that would hand the file over without its
+  // caret, or with another document's.
+  const active = vscode.window.activeTextEditor;
+  const caretAt = active
+    ? { uri: active.document.uri.toString(), line: active.selection.active.line, character: active.selection.active.character }
+    : undefined;
+
   if (vscode.env.uiKind === vscode.UIKind.Web) {
     void vscode.window.showInformationMessage(M.notInBrowser);
     return { ...result, status: "web" };
@@ -163,12 +173,12 @@ export async function handOff(uriArg: unknown, urisArg: unknown, deps: HandOffDe
     }
   }
 
-  // Caret only when invoked from the editor showing the first path.
-  const editor = vscode.window.activeTextEditor;
-  const showsFirst = editor !== undefined && editor.document.uri.toString() === files[0].toString();
+  // Caret only when invoked from the editor showing the first path — judged
+  // from the snapshot taken before the first await, not from the editor that
+  // happens to be active now.
   const goto =
-    showsFirst && config.get<boolean>("passCaret", true)
-      ? caretFromZeroBased(editor.selection.active.line, editor.selection.active.character)
+    caretAt !== undefined && caretAt.uri === files[0].toString() && config.get<boolean>("passCaret", true)
+      ? caretFromZeroBased(caretAt.line, caretAt.character)
       : undefined;
   const plan = planLaunches(
     files.map((u) => contractPath(u.fsPath)),

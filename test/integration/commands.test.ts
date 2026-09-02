@@ -126,6 +126,35 @@ suite("Constly bridge — commands", () => {
     assert.deepEqual([...calls[0].argv], ["--goto=3:5", ...expectedFrom(), "--", contractPath(editor.document.uri.fsPath)]);
   });
 
+  test("the caret is snapshotted before saving and detecting: an active-editor change mid-flight does not lose it", async () => {
+    const p = writeFile(tmp, "p.md", "1\n2\n3\n4\n5\n");
+    const q = writeFile(tmp, "q.md", "q\n");
+    const editor = await openAndShow(p);
+    editor.selection = new vscode.Selection(new vscode.Position(4, 2), new vscode.Position(4, 2));
+
+    // The plain case first: nothing moves while the detector runs.
+    let result = await run();
+    assert.equal(result.status, "launched");
+    assert.equal(calls[0].argv[0], "--goto=5:3");
+
+    // Now the detector changes the active editor before it answers — what our
+    // own Save As offer does (showTextDocument) while a probe is in flight.
+    calls = [];
+    api.test.resetDetectionCache();
+    api.test.setDetector(async () => {
+      await openAndShow(q);
+      assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), vscode.Uri.file(q).toString());
+      return found;
+    });
+    const again = await openAndShow(p);
+    again.selection = new vscode.Selection(new vscode.Position(4, 2), new vscode.Position(4, 2));
+    result = await run();
+    assert.equal(result.status, "launched");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].path, contractPath(vscode.Uri.file(p).fsPath), "the target is p, not the editor active at launch time");
+    assert.equal(calls[0].argv[0], "--goto=5:3", "the caret rides on the first launch although q became active meanwhile");
+  });
+
   test("passCaret = false: no --goto", async () => {
     await setConfig("passCaret", false);
     const file = writeFile(tmp, "nocaret.md", "x\n");
